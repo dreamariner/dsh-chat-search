@@ -1,0 +1,19 @@
+# @dreamariner/dsh-chat-search : 自挂载 bundle
+#
+# 本包同时扮演两个角色（官方模板同款形态，见 DSH skill cordis-plugin-development
+# 的 templates/decoration/）：
+#   · bundle：package.json 的 dsh.bundle.patch 声明本文件 → 安装本包即被挂载；
+#   · plugin：下面的 - insert: 行把本包自己挂进运行中的插件树。
+# client 半边不需要 patch 行：宿主扫描声明了 dsh.client 的包，浏览器模块自动被发现。
+#
+# ⚠ 写法约束（改之前先读，全都踩过或查证过）：
+#   ① 新增行必须放进 - insert:。顶层 - id: X 是给「已存在的行」打补丁，bundle 里
+#      没有这个 id 时它是静默空操作（插件被跳过，日志里连 warn 都没有）。
+#   ② 同名行是整块替换不是深合并（target[key] = value）：给已有行补 config 必须
+#      写全所有字段，只写一个会把其余字段抹掉。
+#   ③ patch 行的 name 只是守卫（不匹配就 skip 并 warn），不是设置 name 的途径；
+#      它只在 - insert: 里才有意义（新行的模块引用）。
+
+- insert:
+    - id: dsh-chat-search
+      name: "@dreamariner/dsh-chat-search"
