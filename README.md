@@ -17,7 +17,7 @@ Time-window chat transcript search over DSH session history（由 create-dsh-plu
 
 配置项：`timezone`（默认 `Asia/Shanghai`，同时用于无后缀入参解释与时间戳渲染）、`defaultHours`（默认 24）、`maxLimit`（默认 2000）。
 
-性能特征：每次调用遍历并回放校验全部会话日志（`listSessions` + 逐会话 `readSession`），耗时随会话总量增长（数百会话、数百 MB 日志为秒级到数十秒级），工具超时 120s。若需要关键词全文检索，用宿主自带的会话检索（`ctx.sessionQuery` 的 `searchSessions`/`searchEvents`，需挂载 FTS 后端），本工具专注无关键词的时间窗实录。
+性能特征：每次调用遍历并回放校验全部会话日志（`listSessions` + 逐会话 `readSession`），耗时随会话总量增长（实测 518 会话 / 210MB 日志约 20s），工具超时 120s。若需要关键词全文检索，用宿主自带的会话检索（`ctx.sessionQuery` 的 `searchSessions`/`searchEvents`，需挂载 FTS 后端），本工具专注无关键词的时间窗实录。
 
 ## 安装
 

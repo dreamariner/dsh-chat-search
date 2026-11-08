@@ -47,7 +47,7 @@ DSH 自带的会话检索（`session_search` 系列，experimental）以关键�
 
 - [x] `pnpm test && pnpm typecheck` 全绿（30 用例：时区解释、窗口优先级、来源过滤、坏会话隔离、渲染截断）
 - [x] 真实数据冒烟：以文件后端伪造服务跑本机全部会话，与 CLI 摘要脚本同窗口逐行比对一致（285 条消息，归一化角色标签后 diff 为空）
-- [ ] 实机验收：装进 desktop profile，重启后模型实际调用 `chat_search` 返回正确实录
+- [x] 实机验收：装进 desktop profile，重启后模型实际调用 `chat_search` 返回正确实录（两轮：hours=1 与 hours=24；全量扫描实测 19.3s，518 会话；与 CLI 脚本同窗口比对，除校验方法自身 141ms 窗口边界伪差外逐条一致）
 
 ## 依赖
 
