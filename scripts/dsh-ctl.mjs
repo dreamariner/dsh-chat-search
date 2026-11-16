@@ -16,19 +16,38 @@
 //
 // **教训 3 · 兜底强杀只能杀自己的实例。** 宽模式（命令行含 Harness 就算）会误杀机器上
 // 别的 DSH 实例。→ 兜底按**属主圈定**：host 进程命令行带本实例 profile 路径 +
-// `dsh-desktop-host`，Electron 主进程由 host 的 ppid 反推。
+// `dsh-desktop-host`，Electron 主进程由 host 的 ppid 反推（/Harness/i 兼容官方打包版
+// 与 dev 形态两种宿主命令行）。
 //
 // **教训 4 · 启动前构建失败必须阻断。** lib/ 出库后没有旧产物可跑：构建失败继续启动 =
 // 插件按包名解析 lib/index.js 失败 = 插件凭空消失（loader 吞异常，无日志）。
 //
+// ## 启动路径上的三道门
+//
+//   ① 构建门（恒开）：`pnpm run build` 失败即阻断（教训 4）。
+//   ② 版本门（根 manifest 有 dshVersion 字段才启用）：官方打包版的
+//      CFBundleShortVersionString 必须等于该字段。插件的 @deepseek-ai/* 钉版跟着
+//      dshVersion 走，宿主升级不配套会产生 loader 静默吞错类故障。
+//      DSH_ALLOW_VERSION_MISMATCH=1 显式越过。
+//   ③ 在飞回合守卫（DSH_INFLIGHT_GUARD=1 开启，默认关）：stop / restart 前扫
+//      `$DSH_HOME/sessions/` 下 2 小时内活跃的会话（session.v*.jsonl 取版本号最大
+//      一份判读），turn/start 之后没有配对 turn/end = 有 agent 回合正在执行中，
+//      重启会切断它的现场。DSH_FORCE_STOP=1 显式越过。
+//
+//   仓根 `.env`（gitignored）在入口自动加载：真实环境变量优先，.env 只补缺；
+//   文件缺失 = 静默 no-op。机密不进仓根 .env（只放路径 / 端口 / 形态 / 守卫开关）。
+//
 // ## 命令（pnpm dsh:<同名>）
 //
-//   dsh:status            实例状态（在跑 / 访问地址 / 主进程 pid）
+//   dsh:status [--json]   实例状态（在跑 / 访问地址 / 主进程 pid；--json 供 automation）
 //   dsh:url               打印访问地址（含 launch token；重启后旧地址失效）
-//   dsh:start [前台|后台]  启动实例（默认前台；后台 = detached + 等就绪）
-//   dsh:restart [前台|后台] 停止后重启（默认后台）
-//   dsh:stop              优雅停止（inspector → 兜底属主圈定 SIGKILL）
+//   dsh:start [前台|后台]  启动实例（默认前台；后台 = detached + 等就绪；过 ①② 门）
+//   dsh:restart [前台|后台] 停止后重启（默认后台；过 ③①② 门）
+//   dsh:stop              优雅停止（inspector → 兜底属主圈定 SIGKILL；过 ③ 门）
 //   dsh:probe [--all]     连接实例并验证本插件装载（pluginInventory/list → fiberPhase）
+//   record --pid N --url URL --mode M
+//                         外部注入启动状态（wrapper 型启动脚本用：shell 层自己 spawn
+//                         时，就绪后把 pid / 地址记进状态文件，供 status / url 读取）
 //
 // ## 环境变量
 //
@@ -39,22 +58,49 @@
 //   DSH_DESKTOP_APP                 官方打包版 .app 路径（默认 /Applications/DeepSeek Harness.app）
 //   DSH_DESKTOP_FORM                official（默认）| dev（DSH_CHECKOUT 源码形态）
 //   DSH_CHECKOUT                    dev 形态的 DSH 源码 checkout 路径（显式指定，无默认推导）
+//   DSH_SKIP_BUILD=1                dev 形态跳过 DSH 全量构建（要求 .desktop-build 已存在）
+//   DSH_ALLOW_VERSION_MISMATCH=1    越过版本门 ②
+//   DSH_INFLIGHT_GUARD=1            开启在飞回合守卫 ③（默认关）
+//   DSH_FORCE_STOP=1                越过在飞回合守卫 ③
 //
 // ## 退出码
 //
-//   0 = 成功；1 = 用法错 / 操作失败；3 = status 时实例没在跑；4 = 插件已装载但非 active；
+//   0 = 成功；1 = 用法错 / 操作失败 / 门拦下；3 = status 时实例没在跑；4 = 插件已装载但非 active；
 //   5 = 插件未出现在实例的插件清单里。
 //
 // ⚠ 纪律：实例必须固定经本脚本（dsh:start）启动。Dock 直启的实例没有 inspector，
 //   stop / restart / 双开守卫都管不了它。
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const NAME = '@dreamariner/dsh-chat-search'
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+// ── 仓根 .env 加载（真实环境变量优先；.env 只补缺；缺失 = 静默 no-op）────────────
+// KEY=VALUE / `export ` 前缀 / 成对单双引号取值；# 开头整行是注释，不支持行内注释。
+function loadRepoEnv() {
+  const file = join(repo, '.env')
+  if (!existsSync(file)) return
+  let raw
+  try { raw = readFileSync(file, 'utf8') } catch { return }
+  for (const line0 of raw.split('\n')) {
+    let line = line0.replace(/\r$/, '').trim()
+    if (line === '' || line.startsWith('#') || !line.includes('=')) continue
+    if (line.startsWith('export ')) line = line.slice(7)
+    const eq = line.indexOf('=')
+    const key = line.slice(0, eq).trim()
+    let value = line.slice(eq + 1)
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue
+    if (process.env[key] !== undefined) continue
+    if ((value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+        (value.startsWith("'") && value.endsWith("'") && value.length >= 2)) value = value.slice(1, -1)
+    process.env[key] = value
+  }
+}
+loadRepoEnv()
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
 const profileName = () => process.env.DSH_PROFILE || 'desktop'
@@ -68,7 +114,7 @@ const cmd = argv[0]
 const rest = argv.slice(1)
 const argOf = (name, dflt) => { const i = rest.indexOf(name); return i >= 0 && rest[i + 1] !== undefined ? rest[i + 1] : dflt }
 const fail = (msg) => { console.error(`[dsh-ctl] ✗ ${msg}`); process.exit(1) }
-const usage = () => fail(`未知命令：${cmd ?? '（缺）'}。可用：status | url | start [前台|后台] | restart [前台|后台] | stop | probe [--all]`)
+const usage = () => fail(`未知命令：${cmd ?? '（缺）'}。可用：status [--json] | url | start [前台|后台] | restart [前台|后台] | stop | probe [--all] | record --pid N --url URL --mode M`)
 
 /** 启动形态：official（打包版 + --inspect）| dev（DSH_CHECKOUT 源码）。 */
 const form = () => process.env.DSH_DESKTOP_FORM || 'official'
@@ -84,6 +130,8 @@ function lastUrlFromLog() {
 }
 
 function readState() { try { return JSON.parse(readFileSync(stateFile(), 'utf8')) } catch { return undefined } }
+
+/** 合并写入状态帧（start 路径用；整帧覆写请走 CLI record）。 */
 function record(patch) {
   mkdirSync(dshHome(), { recursive: true })
   writeFileSync(stateFile(), `${JSON.stringify({ ...(readState() ?? {}), ...patch }, null, 2)}\n`)
@@ -123,6 +171,13 @@ async function originUp(url) {
   try { await fetch(new URL(url).origin + '/', { signal: AbortSignal.timeout(1500) }); return true } catch { return false }
 }
 
+/** 候选地址：状态文件优先（本次启动的可靠记录），日志兜底（append-only，可能是旧的）。
+ *  实例不经 dsh:start 重启（Dock 直启 / 手工拉起）时状态文件会陈旧 → 由调用方逐个试连。 */
+function urlCandidates() {
+  const state = readState()
+  return [...new Set([state?.url, lastUrlFromLog()].filter(Boolean))]
+}
+
 /** 属主圈定：只找属于本 DSH_HOME + profile 的实例进程（host 带 profile 路径，主进程按 ppid 反推）。 */
 function findOurInstancePids() {
   const marker = join(dshHome(), 'profiles', profileName())
@@ -157,9 +212,23 @@ async function status() {
   let mainPid
   if (targets) { try { mainPid = await evaluate(targets[0], 'process.pid') } catch { /* 忽略 */ } }
   const state = readState()
-  const url = state?.url ?? lastUrlFromLog()
-  const running = Boolean(targets) || Boolean(url && (await originUp(url)))
-  return { running, mainPid: typeof mainPid === 'number' ? mainPid : state?.mainPid, url, inspectorPort: inspectPort(), form: form() }
+  // 地址取「第一个可达的候选」；全部不可达时仍回报第一个候选（附 urlFromStateFile 标注来源）
+  let url
+  let urlReachable = false
+  for (const c of urlCandidates()) {
+    if (await originUp(c)) { url = c; urlReachable = true; break }
+    url ??= c
+  }
+  const running = Boolean(targets) || urlReachable
+  return {
+    running,
+    mainPid: typeof mainPid === 'number' ? mainPid : state?.mainPid,
+    url,
+    urlFromStateFile: url !== undefined && url === state?.url,
+    startedAt: state?.startedAt,
+    inspectorPort: inspectPort(),
+    form: form(),
+  }
 }
 
 async function stop() {
@@ -198,6 +267,72 @@ function buildGate() {
   if (r.status !== 0) fail('构建失败，已阻断启动（继续启动 = 插件凭空消失）')
 }
 
+/** 版本门：官方版 CFBundleShortVersionString 必须等于仓根 manifest 的 dshVersion。
+ *  字段缺失 = 门不启用（向后兼容存量仓）；读不到官方版本号也拦（形态异常）。
+ *  DSH_ALLOW_VERSION_MISMATCH=1 显式越过。 */
+function assertHostVersion() {
+  if (form() !== 'official') return
+  if (process.env.DSH_ALLOW_VERSION_MISMATCH === '1') return
+  let expected
+  try { expected = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).dshVersion } catch { /* 无锚 */ }
+  if (!expected) return
+  const app = desktopApp()
+  const r = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(app, 'Contents', 'Info.plist')], { encoding: 'utf8' })
+  const actual = (r.stdout ?? '').trim()
+  if (r.status !== 0 || !actual) fail(`读不到官方打包版版本号（${app}）。确认 .app 路径（DSH_DESKTOP_APP）或：DSH_ALLOW_VERSION_MISMATCH=1`)
+  if (actual !== expected) {
+    fail(`版本不一致：官方版 ${actual} vs 本仓 dshVersion ${expected}。插件的 @deepseek-ai/* 钉版跟着 dshVersion 走，` +
+      `版本漂移会产生 loader 静默吞错类故障，先按升级流程对齐再启动；确要强行运行：DSH_ALLOW_VERSION_MISMATCH=1`)
+  }
+}
+
+/** 在飞回合守卫（opt-in：DSH_INFLIGHT_GUARD=1）：turn/start 之后没有配对 turn/end
+ *  = 有 agent 回合正在执行中，stop / restart 会切断它的现场（工具输出留在转录本，
+ *  但推进状态与待发结论全丢）。DSH_FORCE_STOP=1 显式越过。 */
+function assertNoInflightTurns() {
+  if (process.env.DSH_INFLIGHT_GUARD !== '1') return
+  if (process.env.DSH_FORCE_STOP === '1') return
+  const root = join(dshHome(), 'sessions')
+  const cutoff = Date.now() - 2 * 3600 * 1000 // 只看 2 小时内活跃的会话
+  const inflight = []
+  let wsDirs = []
+  try { wsDirs = readdirSync(root) } catch { return }
+  for (const ws of wsDirs) {
+    let ses
+    try { ses = readdirSync(join(root, ws)) } catch { continue }
+    for (const s of ses) {
+      const sdir = join(root, ws, s)
+      let files
+      try { files = readdirSync(sdir) } catch { continue }
+      // 会话文件按版本演进（session.v4.jsonl …）：取版本号最大的那份判读
+      const sessionFile = files.filter((f) => /^session\.v\d+\.jsonl$/.test(f)).sort().at(-1)
+      if (!sessionFile) continue
+      const p = join(sdir, sessionFile)
+      let st
+      try { st = statSync(p) } catch { continue }
+      if (st.mtimeMs < cutoff) continue
+      let lines
+      try { lines = readFileSync(p, 'utf8').trim().split('\n') } catch { continue }
+      let lastStart = -1, lastEnd = -1, turn = '?'
+      for (let i = lines.length - 1; i >= 0 && (lastStart === -1 || lastEnd === -1); i--) {
+        try {
+          const e = JSON.parse(lines[i])
+          if (e.type === 'turn/end' && lastEnd === -1) lastEnd = i
+          if (e.type === 'turn/start' && lastStart === -1) { lastStart = i; turn = e.data?.turn ?? '?' }
+        } catch { /* 跳过坏行 */ }
+      }
+      if (lastStart > lastEnd) {
+        inflight.push(`${s} turn ${turn}（最后活动 ${Math.round((Date.now() - st.mtimeMs) / 60000)} 分钟前）`)
+      }
+    }
+  }
+  if (inflight.length === 0) return
+  console.error('[dsh-ctl] ⛔ 有 agent 回合正在执行中，stop / restart 会切断它的现场：')
+  for (const x of inflight) console.error('  - ' + x)
+  console.error('  等它跑完再操作；确要切断请 DSH_FORCE_STOP=1')
+  process.exit(1)
+}
+
 function launchCmd() {
   if (form() === 'dev') {
     const checkout = process.env.DSH_CHECKOUT
@@ -215,19 +350,20 @@ function launchCmd() {
 
 async function start(modeDefault) {
   const mode = rest.find((a) => a === '前台' || a === '后台') ?? modeDefault
+  assertHostVersion()
   buildGate()
   const st = await status()
   if (st.running) {
     console.log(`[dsh-ctl] 实例已在运行${st.url ? `：${st.url}` : ''}；如需重启用 pnpm dsh:restart`)
     process.exit(0)
   }
-  const { cmd, args, cwd } = launchCmd()
+  const { cmd: bin, args, cwd } = launchCmd()
   mkdirSync(dirname(logFile()), { recursive: true })
   if (mode === '后台') {
     const out = openSync(logFile(), 'a')
-    const child = spawn(cmd, args, { cwd, detached: true, stdio: ['ignore', out, out] })
+    const child = spawn(bin, args, { cwd, detached: true, stdio: ['ignore', out, out] })
     child.unref()
-    console.log(`[dsh-ctl] 已后台启动（PID ${child.pid}，形态 ${form()}：${cmd} ${args.join(' ')}）`)
+    console.log(`[dsh-ctl] 已后台启动（PID ${child.pid}，形态 ${form()}：${bin} ${args.join(' ')}）`)
     for (let i = 0; i < 90; i++) {
       if (!alive(child.pid)) { console.error('[dsh-ctl] ✗ 进程已退出，日志末尾：'); console.error(readFileSync(logFile(), 'utf8').split('\n').slice(-12).join('\n')); process.exit(1) }
       const url = lastUrlFromLog()
@@ -243,14 +379,19 @@ async function start(modeDefault) {
   }
   // 前台：URL 要等应用打印（不进日志），先记 pid 再顶替
   record({ mainPid: process.pid, mode: 'foreground', form: form() })
-  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit' })
+  const r = spawnSync(bin, args, { cwd, stdio: 'inherit' })
   process.exit(r.status ?? 0)
 }
 
 /** 装载探针：连实例 Web API，验证本插件在 pluginInventory 里且 active。 */
 async function probe() {
-  const url = readState()?.url ?? lastUrlFromLog()
-  if (!url) fail('无法确定实例地址（实例没经 dsh:start 启动过？日志里也没有地址）')
+  // 地址候选逐个试连：状态文件可能陈旧（实例不经 dsh:start 重启过），日志兜底
+  let url
+  for (const c of urlCandidates()) { if (await originUp(c)) { url = c; break } }
+  if (!url) {
+    fail('无法确定可达的实例地址（状态文件与日志里的地址都连不上）。'
+      + '实例在跑但地址已换时，重启一次（pnpm dsh:restart）即可刷新状态文件')
+  }
   const base = new URL(url).origin
   const res = await fetch(`${base}/?token=${new URL(url).searchParams.get('token')}`, { redirect: 'manual' })
   const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')
@@ -277,32 +418,61 @@ async function probe() {
   console.log('[dsh-ctl] ✓ 插件已装载且 active')
 }
 
-switch (cmd) {
-  case 'status': {
-    const st = await status()
-    console.log(st.running
-      ? `[dsh-ctl] 实例在跑${st.mainPid ? `（主进程 ${st.mainPid}）` : ''}${st.url ? `\n[dsh-ctl] 地址：${st.url}` : ''}`
-      : '[dsh-ctl] 实例没在跑')
-    process.exit(st.running ? 0 : 3)
+/** 只有被直接执行时才走 CLI（作为模块 import 时不跑）：导出面供护栏测试用。 */
+const isMain = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+if (isMain) {
+  switch (cmd) {
+    case 'status': {
+      const st = await status()
+      if (rest.includes('--json')) {
+        console.log(JSON.stringify(st, null, 2))
+      } else {
+        console.log(st.running
+          ? `[dsh-ctl] 实例在跑${st.mainPid ? `（主进程 ${st.mainPid}）` : ''}${st.url ? `\n[dsh-ctl] 地址：${st.url}` : ''}`
+          : '[dsh-ctl] 实例没在跑')
+      }
+      process.exit(st.running ? 0 : 3)
+    }
+    case 'url': {
+      const st = await status()
+      if (!st.url) fail('没有可用地址（实例没启动过？）')
+      console.log(st.url)
+      break
+    }
+    case 'stop': {
+      assertNoInflightTurns()
+      const r = await stop()
+      console.log(r.stopped ? `[dsh-ctl] 已停止（${r.via}${r.pid ? `，pid ${r.pid}` : ''}）` : '[dsh-ctl] 实例本来就没在跑')
+      break
+    }
+    case 'start': await start('前台'); break
+    case 'restart': {
+      assertNoInflightTurns()
+      const r = await stop()
+      console.log(r.stopped ? `[dsh-ctl] 已停止（${r.via}），重新启动…` : '[dsh-ctl] 实例本来就没在跑，直接启动…')
+      await start('后台')
+      break
+    }
+    case 'probe': await probe(); break
+    case 'record': {
+      // 外部注入启动状态（wrapper 型启动脚本用）：整帧覆写，语义 = 「最近一次启动」
+      const pid = Number(argOf('--pid', ''))
+      const url = argOf('--url', '')
+      const mode = argOf('--mode', 'background')
+      mkdirSync(dshHome(), { recursive: true })
+      writeFileSync(stateFile(), `${JSON.stringify({
+        ...(Number.isInteger(pid) && pid > 0 ? { mainPid: pid } : {}),
+        ...(url ? { url } : {}),
+        mode,
+        startedAt: new Date().toISOString(),
+        form: form(),
+      }, null, 2)}\n`)
+      console.log(`[dsh-ctl] 已记录本次启动：${readFileSync(stateFile(), 'utf8').trim().replace(/\n/g, ' ')}`)
+      break
+    }
+    default: usage()
   }
-  case 'url': {
-    const st = await status()
-    if (!st.url) fail('没有可用地址（实例没启动过？）')
-    console.log(st.url)
-    break
-  }
-  case 'stop': {
-    const r = await stop()
-    console.log(r.stopped ? `[dsh-ctl] 已停止（${r.via}${r.pid ? `，pid ${r.pid}` : ''}）` : '[dsh-ctl] 实例本来就没在跑')
-    break
-  }
-  case 'start': await start('前台'); break
-  case 'restart': {
-    const r = await stop()
-    console.log(r.stopped ? `[dsh-ctl] 已停止（${r.via}），重新启动…` : '[dsh-ctl] 实例本来就没在跑，直接启动…')
-    await start('后台')
-    break
-  }
-  case 'probe': await probe(); break
-  default: usage()
 }
+
+export { status, stop, probe, record, findOurInstancePids, inspectorUp, evaluate, lastUrlFromLog, readState, assertHostVersion, assertNoInflightTurns, dshHome, profileName, logFile, stateFile, inspectPort, form }
