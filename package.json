@@ -58,7 +58,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/schemastery": ">=3.18.5 <4.0.0-0"
+    "@deepseek-ai/schemastery": ">=3.19.0 <4.0.0-0"
   },
   "devDependencies": {
     "@types/node": "^24",
@@ -66,8 +66,8 @@
     "tsdown": "^0.22.2",
     "typescript": "^5.9",
     "vitest": "^5.0.3",
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/schemastery": "3.18.5"
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/schemastery": "3.19.0"
   },
   "packageManager": "pnpm@11.7.0"
 }
