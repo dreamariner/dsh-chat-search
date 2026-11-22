@@ -15,8 +15,8 @@ importers:
         specifier: 3.19.0
         version: 3.19.0
       '@dreamariner/dsh-ctl':
-        specifier: link:../create-dsh-plugin/packages/dsh-ctl
-        version: link:../create-dsh-plugin/packages/dsh-ctl
+        specifier: ^0.6.0
+        version: 0.6.0
       '@types/node':
         specifier: ^24
         version: 24.19.2
@@ -52,6 +52,11 @@ packages:
 
   '@deepseek-ai/schemastery@3.19.0':
     resolution: {integrity: sha512-bDXoYQa7ghAhmdYD5VPlzKxEzJV/aKkz5l4V5h1u06z8GAPN1ROewSjvR9WiXhpa52E9fng8lpH5QdCRIQgnyQ==}
+
+  '@dreamariner/dsh-ctl@0.6.0':
+    resolution: {integrity: sha512-dycBuc//JQ99DMKi2CLw/rhVf5ITdzOnSwr8GsmxjeDas/K8Y2cDFqx2FLC9n2poDRQ32KOOIUiJqpihUlr0Sg==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -748,6 +753,8 @@ snapshots:
     dependencies:
       '@deepseek-ai/cosmokit': 1.9.0
       '@standard-schema/spec': 1.1.0
+
+  '@dreamariner/dsh-ctl@0.6.0': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 
