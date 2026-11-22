@@ -94,7 +94,7 @@ cordis.patch.yml    自挂载 bundle patch
 locale/*.json       展示元数据（meta.title / meta.description）
 icon.svg            插件图标（≤ 256 KiB）
 tests/              bundle 形态守卫 / 窗口 / 扫描 / 渲染用例
-scripts/lib/manifest-deps.mjs  依赖策略单一来源（不变式 I1/I2，tsdown 配置引用）
+@dreamariner/dsh-ctl/manifest-deps  依赖策略单一来源（不变式 I1/I2，tsdown 配置引用）
 ```
 
 ## 依赖纪律（不变式，改动前必读）

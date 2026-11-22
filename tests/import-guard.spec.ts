@@ -1,6 +1,6 @@
 // @dreamariner/dsh-chat-search :: 源码导入纪律护栏（依赖决策表的机械执行）
 //
-// 决策表（scripts/lib/manifest-deps.mjs）：peer = 外置（宿主供给同一实例）；
+// 决策表（@dreamariner/dsh-ctl/manifest-deps）：peer = 外置（宿主供给同一实例）；
 // dependencies = 内联自带；devDependencies = 只许 `import type`。
 //
 // 本护栏锁**源码**，与构建门（tsdown onlyImport）的分工要紧：
@@ -13,17 +13,12 @@
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { devDepsOf, depsOf, peersOf, readManifest, runtimeAllowed } from '@dreamariner/dsh-ctl/manifest-deps'
 import ts from 'typescript'
 
 const ROOT = process.cwd()
 const PKG = join(ROOT, '.')
 
-// manifest-deps 两布局都在 <仓根>/scripts/lib/（single 的仓根即包根），根 vitest
-// 的 cwd 恒为仓根；相对路径随布局变化写不出静态 import，按 URL 动态引入。
-const { devDepsOf, depsOf, peersOf, readManifest, runtimeAllowed } = await import(
-  pathToFileURL(join(ROOT, 'scripts', 'lib', 'manifest-deps.mjs')).href
-)
 
 const manifest = readManifest(PKG)
 const PEERS = peersOf(manifest)
