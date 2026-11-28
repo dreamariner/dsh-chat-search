@@ -1,16 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
-  <!-- 占位图标：Plugin Manager 与 Settings 的展示资源（官方 checklist 要求项）。
-       通用「插件」语义：一块上带凸钮、右带凹槽的拼图；透明背景（无底板），
-       青到蓝的双色对角渐变，与 DSH 内置插件图标的风格同族。
-       换成你自己的原创图形，或确认许可允许再分发后再放第三方素材。
-       约束：SVG / PNG / JPEG / WebP，≤ 256 KiB，路径不得离开包内。 -->
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 聊天气泡 + 右下角搜索放大镜。与 dsh-web-search-minimax 的 icon.svg 同一套设计语言：
+       放大镜压在主体右下角，mask 挖空主体并留等宽边距
+       （镜圈挖空 r 7.7 = 外缘 6.5 + 1.2；镜柄胶囊 5.7 = 笔画 3.3 + 2×1.2），镜柄从镜圈外缘起笔。
+       气泡为渐变实心填充（不镂空），横宽 20×13.5（宽高比约 1.5），尾巴在左下；
+       放大镜比 minimax 版加大一号（镜圈 r 4.9 / 笔画 3.2，minimax 为 r 4.2 / 2.8）。
+       透明背景，≤ 256 KiB。 -->
+  <g mask="url(#cs-lens-cutout)">
+    <path d="M11.5 8H22.5A4.5 4.5 0 0 1 27 12.5V17A4.5 4.5 0 0 1 22.5 21.5H16L9.6 26.8L11.5 21.5A4.5 4.5 0 0 1 7 17V12.5A4.5 4.5 0 0 1 11.5 8Z"
+          fill="url(#cs-grad)"/>
+  </g>
+  <path d="M27.8 26.8L29.21 28.21" stroke="#2f7cf6" stroke-width="3.3" stroke-linecap="round"/>
+  <circle cx="23.2" cy="22.2" r="4.9" stroke="url(#cs-grad)" stroke-width="3.2"/>
   <defs>
-    <linearGradient id="puzzle-g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#41d1c8"/>
-      <stop offset="1" stop-color="#2f7cf6"/>
+    <mask id="cs-lens-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="36" height="36">
+      <rect width="36" height="36" fill="#FFFFFF"/>
+      <g fill="#000000" stroke="#000000">
+        <circle cx="23.2" cy="22.2" r="7.7" stroke="none"/>
+        <line x1="23.2" y1="22.2" x2="29.21" y2="28.21" stroke-width="5.7" stroke-linecap="round"/>
+      </g>
+    </mask>
+    <linearGradient id="cs-grad" x1="6" y1="18" x2="30" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#41d1c8"/><stop offset="1" stop-color="#2f7cf6"/>
     </linearGradient>
   </defs>
-  <path d="M10 28V12h4.5a3.5 3.5 0 0 1 7 0H26v4.5a3.5 3.5 0 0 0 0 7V28H10Z"
-        fill="url(#puzzle-g)" stroke="url(#puzzle-g)" stroke-width="3"
-        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

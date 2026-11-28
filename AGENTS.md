@@ -18,7 +18,7 @@
 ├── tests/              # 自守护栏测试（bundle 形态 / client 边界 / 导入纪律）
 ├── scripts/            # 项目共用：profile-add / lib/manifest-deps（host 另有 dev-hmr）
 ├── locale/             # 展示元数据（Plugin Manager / Settings 在不激活插件时经 exports 读取）
-├── icon.svg            # 占位图标（透明底渐变拼图，替换成你的原创图形）
+├── icon.svg            # 插件图标（聊天气泡 + 右下角搜索放大镜，透明底青蓝渐变，与 dsh-web-search-minimax 图标同一设计语言）
 ├── cordis.patch.yml    # 自挂载 bundle 的配置层
 ├── lib/                # 构建产物（不入库）
 └── package.json        # manifest（files / exports / dsh 键）
