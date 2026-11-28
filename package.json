@@ -63,7 +63,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/schemastery": "3.19.0",
-    "@dreamariner/dsh-ctl": "^0.6.0",
+    "@dreamariner/dsh-ctl": "^0.7.0",
     "@types/node": "^24",
     "js-yaml": "^4.1.0",
     "tsdown": "^0.22.2",

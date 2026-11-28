@@ -1,2 +1,3 @@
 minimumReleaseAgeExclude:
   - '@dreamariner/dsh-ctl@0.6.0'
+  - '@dreamariner/dsh-ctl@0.7.0'
